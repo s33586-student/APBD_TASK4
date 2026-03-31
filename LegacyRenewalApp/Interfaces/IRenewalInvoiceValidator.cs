@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace LegacyRenewalApp.Interfaces
 {
-    internal interface IRenewalInvoiceValidator
+    public interface IRenewalInvoiceValidator
     {
         void Validate(int customerId, string planCode, int seatCount, string paymentMethod);
     }

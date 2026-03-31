@@ -1,3 +1,4 @@
+using LegacyRenewalApp.Helper;
 using LegacyRenewalApp.Interfaces;
 using LegacyRenewalApp.Models;
 using LegacyRenewalApp.Repositories;
@@ -9,15 +10,18 @@ namespace LegacyRenewalApp
     {
         private readonly ICustomerRepository _customerRepository;
         private readonly ISubscriptionPlanRepository _planRepository;
-        private IRenewalInvoiceValidator _validator;
+        private readonly IRenewalInvoiceValidator _validator;
+        private readonly IBillingGateway billingGateway;
 
-        public SubscriptionRenewalService() : this(new CustomerRepository(), new SubscriptionPlanRepository()) 
+        public SubscriptionRenewalService() : this(new CustomerRepository(), new SubscriptionPlanRepository(), new RenewalInvoiceValidator(), new BillingGatewayAdapter()) 
         { 
         }
-        public SubscriptionRenewalService(ICustomerRepository customerRepository, ISubscriptionPlanRepository subscriptionPlanRepository)
+        public SubscriptionRenewalService(ICustomerRepository customerRepository, ISubscriptionPlanRepository subscriptionPlanRepository, IRenewalInvoiceValidator validator, IBillingGateway billingGateway)
         {
             _customerRepository = customerRepository;
             _planRepository = subscriptionPlanRepository;
+            _validator = validator;
+            this.billingGateway = billingGateway;
         }
 
 
@@ -46,6 +50,7 @@ namespace LegacyRenewalApp
             decimal discountAmount = 0m;
             string notes = string.Empty;
 
+            //// Helper -> DiscountCalculator : IDiscountCalculator 
             if (customer.Segment == "Silver")
             {
                 discountAmount += baseAmount * 0.05m;
@@ -94,12 +99,15 @@ namespace LegacyRenewalApp
                 notes += "small team discount; ";
             }
 
+       
             if (useLoyaltyPoints && customer.LoyaltyPoints > 0)
             {
                 int pointsToUse = customer.LoyaltyPoints > 200 ? 200 : customer.LoyaltyPoints;
                 discountAmount += pointsToUse;
                 notes += $"loyalty points used: {pointsToUse}; ";
             }
+
+            //////
 
             decimal subtotalAfterDiscount = baseAmount - discountAmount;
             if (subtotalAfterDiscount < 300m)
@@ -108,6 +116,7 @@ namespace LegacyRenewalApp
                 notes += "minimum discounted subtotal applied; ";
             }
 
+            //// Helper -> SupportFeeCalculator : ISupportFeeCalculator 
             decimal supportFee = 0m;
             if (includePremiumSupport)
             {
@@ -127,6 +136,7 @@ namespace LegacyRenewalApp
                 notes += "premium support included; ";
             }
 
+            //// Helper -> PaymentFeeCalculator : IPaymentFeeCalculator 
             decimal paymentFee = 0m;
             if (normalizedPaymentMethod == "CARD")
             {
@@ -153,6 +163,8 @@ namespace LegacyRenewalApp
                 throw new ArgumentException("Unsupported payment method");
             }
 
+            //// Helper -> TaxRateCalculator : ITaxRateCalculator 
+
             decimal taxRate = 0.20m;
             if (customer.Country == "Poland")
             {
@@ -170,6 +182,8 @@ namespace LegacyRenewalApp
             {
                 taxRate = 0.25m;
             }
+
+            /////////
 
             decimal taxBase = subtotalAfterDiscount + supportFee + paymentFee;
             decimal taxAmount = taxBase * taxRate;
@@ -198,7 +212,7 @@ namespace LegacyRenewalApp
                 GeneratedAt = DateTime.UtcNow
             };
 
-            LegacyBillingGateway.SaveInvoice(invoice);
+            billingGateway.SaveInvoice(invoice);
 
             if (!string.IsNullOrWhiteSpace(customer.Email))
             {
@@ -207,7 +221,7 @@ namespace LegacyRenewalApp
                     $"Hello {customer.FullName}, your renewal for plan {normalizedPlanCode} " +
                     $"has been prepared. Final amount: {invoice.FinalAmount:F2}.";
 
-                LegacyBillingGateway.SendEmail(customer.Email, subject, body);
+                billingGateway.SendEmail(customer.Email, subject, body);
             }
 
             return invoice;
