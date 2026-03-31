@@ -1,9 +1,26 @@
+using LegacyRenewalApp.Interfaces;
+using LegacyRenewalApp.Models;
+using LegacyRenewalApp.Repositories;
 using System;
 
 namespace LegacyRenewalApp
 {
     public class SubscriptionRenewalService
     {
+        private readonly ICustomerRepository _customerRepository;
+        private readonly ISubscriptionPlanRepository _planRepository;
+        private IRenewalInvoiceValidator _validator;
+
+        public SubscriptionRenewalService() : this(new CustomerRepository(), new SubscriptionPlanRepository()) 
+        { 
+        }
+        public SubscriptionRenewalService(ICustomerRepository customerRepository, ISubscriptionPlanRepository subscriptionPlanRepository)
+        {
+            _customerRepository = customerRepository;
+            _planRepository = subscriptionPlanRepository;
+        }
+
+
         public RenewalInvoice CreateRenewalInvoice(
             int customerId,
             string planCode,
@@ -12,34 +29,13 @@ namespace LegacyRenewalApp
             bool includePremiumSupport,
             bool useLoyaltyPoints)
         {
-            if (customerId <= 0)
-            {
-                throw new ArgumentException("Customer id must be positive");
-            }
-
-            if (string.IsNullOrWhiteSpace(planCode))
-            {
-                throw new ArgumentException("Plan code is required");
-            }
-
-            if (seatCount <= 0)
-            {
-                throw new ArgumentException("Seat count must be positive");
-            }
-
-            if (string.IsNullOrWhiteSpace(paymentMethod))
-            {
-                throw new ArgumentException("Payment method is required");
-            }
+            _validator.Validate(customerId, planCode, seatCount, paymentMethod);
 
             string normalizedPlanCode = planCode.Trim().ToUpperInvariant();
             string normalizedPaymentMethod = paymentMethod.Trim().ToUpperInvariant();
 
-            var customerRepository = new CustomerRepository();
-            var planRepository = new SubscriptionPlanRepository();
-
-            var customer = customerRepository.GetById(customerId);
-            var plan = planRepository.GetByCode(normalizedPlanCode);
+            var customer = _customerRepository.GetById(customerId);
+            var plan = _planRepository.GetByCode(normalizedPlanCode);
 
             if (!customer.IsActive)
             {
